@@ -27,6 +27,12 @@
 #include "./allocator_interface.h"
 #include "./memlib.h"
 
+typedef struct Node {
+  struct Node* next;
+} Node;
+
+Node* head;
+
 // Don't call libc malloc!
 #define malloc(...) (USE_MY_MALLOC)
 #define free(...) (USE_MY_FREE)
@@ -44,6 +50,10 @@
 // The smallest aligned size that will hold a size_t value.
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
+#ifndef BLOCK_SIZE
+// #define BLOCK_SIZE 32768
+#define BLOCK_SIZE 1024
+#endif
 // check - This checks our invariant that the size_t header before every
 // block points to either the beginning of the next block, or the end of the
 // heap.
@@ -72,21 +82,35 @@ int my_check() {
 // calls are made.  Since this is a very simple implementation, we just
 // return success.
 int my_init() {
+  head = mem_sbrk(sizeof(Node));
+  head->next = NULL;
   return 0;
 }
 
 //  malloc - Allocate a block by incrementing the brk pointer.
 //  Always allocate a block whose size is a multiple of the alignment.
 void * my_malloc(size_t size) {
+  if (size > BLOCK_SIZE) {
+    return NULL;
+  } else {
+    size = BLOCK_SIZE;
+  }
   // We allocate a little bit of extra memory so that we can store the
   // size of the block we've allocated.  Take a look at realloc to see
   // one example of a place where this can come in handy.
   int aligned_size = ALIGN(size + SIZE_T_SIZE);
 
+  void *p;
+  if (head->next != NULL){
+    p = head;
+    head = head->next;
+  } else {
+    p = mem_sbrk(aligned_size);
+  }
   // Expands the heap by the given number of bytes and returns a pointer to
   // the newly-allocated area.  This is a slow call, so you will want to
   // make sure you don't wind up calling it on every malloc.
-  void *p = mem_sbrk(aligned_size);
+  // void *p = mem_sbrk(aligned_size);
 
   if (p == (void *)-1) {
     // Whoops, an error of some sort occurred.  We return NULL to let
@@ -109,6 +133,9 @@ void * my_malloc(size_t size) {
 
 // free - Freeing a block does nothing.
 void my_free(void *ptr) {
+  Node* prev = head;
+  head = (Node*) ptr;
+  head->next = prev;
 }
 
 // realloc - Implemented simply in terms of malloc and free
