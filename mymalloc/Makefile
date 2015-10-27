@@ -4,7 +4,7 @@ LOCKER=/afs/csail.mit.edu/proj/courses/6.172
 CC := gcc
 # You can add -Werr to GCC to force all warnings to turn into errors
 CFLAGS := -std=gnu99 -g -Wall -Wno-write-strings
-LDFLAGS := -lpthread
+LDFLAGS := -lpthread -lm
 # Macros defined by the user or OpenTuner
 PARAMS :=
 

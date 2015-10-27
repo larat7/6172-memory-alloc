@@ -49,8 +49,7 @@ typedef struct range_t {
 // we create a range struct for this block and add it to the range list.
 static int add_range(const malloc_impl_t *impl, range_t **ranges, char *lo,
     int size, int tracenum, int opnum) {
-  //  char *hi = lo + size - 1;
-  //  range_t *p = NULL;
+   char *hi = lo + size - 1;
 
   // You can use this as a buffer for writing messages with sprintf.
   // char msg[MAXLINE];
@@ -59,12 +58,30 @@ static int add_range(const malloc_impl_t *impl, range_t **ranges, char *lo,
 
   // Payload addresses must be R_ALIGNMENT-byte aligned
   // TODO(project3): YOUR CODE HERE
+  if (!(IS_ALIGNED(&lo)) || !(IS_ALIGNED(&hi))) {
+    return 0;
+  }
 
   // The payload must lie within the extent of the heap
   // TODO(project3): YOUR CODE HERE
+  if (hi > (char *) mem_heap_hi() || lo < (char *) mem_heap_lo()) {
+    printf("The payload must lie within the extent of the heap\n");
+    return 0;
+  }
 
   // The payload must not overlap any other payloads
   // TODO(project3): YOUR CODE HERE
+  range_t curr_range = {.lo = lo, .hi = hi, .next = NULL};
+
+  range_t* range = *ranges;
+  while(range != NULL) {
+    if ((curr_range.lo >= range->lo && curr_range.lo <= range->hi) ||
+        (curr_range.hi >= range->lo && curr_range.hi <= range->hi) ||
+        (range->hi >= curr_range.lo && range->hi <= curr_range.hi) ||
+        (range->lo >= curr_range.lo && range->lo <= curr_range.hi)) {
+      return 0;
+    }
+  }
 
   // Everything looks OK, so remember the extent of this block by creating a
   // range struct and adding it the range list.

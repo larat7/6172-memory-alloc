@@ -24,14 +24,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "./allocator_interface.h"
 #include "./memlib.h"
-
-typedef struct Node {
-  struct Node* next;
-} Node;
-
-Node* head;
 
 // Don't call libc malloc!
 #define malloc(...) (USE_MY_MALLOC)
@@ -51,9 +46,17 @@ Node* head;
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 #ifndef BLOCK_SIZE
-// #define BLOCK_SIZE 32768
 #define BLOCK_SIZE 1024
 #endif
+
+#define MAX_SIZE 20
+
+typedef struct Node {
+  struct Node* next;
+} Node;
+
+Node* freeList[MAX_SIZE];
+
 // check - This checks our invariant that the size_t header before every
 // block points to either the beginning of the next block, or the end of the
 // heap.
@@ -82,28 +85,33 @@ int my_check() {
 // calls are made.  Since this is a very simple implementation, we just
 // return success.
 int my_init() {
-  head = mem_sbrk(sizeof(Node));
-  head->next = NULL;
+  for (int i = 0; i < MAX_SIZE; i++){
+    freeList[i] = mem_sbrk(sizeof(Node));
+    freeList[i]->next = NULL;
+  }
   return 0;
 }
 
 //  malloc - Allocate a block by incrementing the brk pointer.
 //  Always allocate a block whose size is a multiple of the alignment.
 void * my_malloc(size_t size) {
-  if (size > BLOCK_SIZE) {
-    return NULL;
-  } else {
-    size = BLOCK_SIZE;
-  }
+  size_t expo = ceil(log(size)/log(2));
+  size = pow(2, expo);
+  // if (size > BLOCK_SIZE) {
+  //   return NULL;
+  // } else {
+  //   size = BLOCK_SIZE;
+  // }
   // We allocate a little bit of extra memory so that we can store the
   // size of the block we've allocated.  Take a look at realloc to see
   // one example of a place where this can come in handy.
   int aligned_size = ALIGN(size + SIZE_T_SIZE);
 
+  assert(expo < MAX_SIZE);
   void *p;
-  if (head->next != NULL){
-    p = head;
-    head = head->next;
+  if (freeList[expo]->next != NULL){
+    p = freeList[expo];
+    freeList[expo] = freeList[expo]->next;
   } else {
     p = mem_sbrk(aligned_size);
   }
@@ -119,7 +127,7 @@ void * my_malloc(size_t size) {
   } else {
     // We store the size of the block we've allocated in the first
     // SIZE_T_SIZE bytes.
-    *(size_t*)p = size;
+    *(size_t*)p = expo;
 
     // Then, we return a pointer to the rest of the block of memory,
     // which is at least size bytes long.  We have to cast to uint8_t
@@ -127,15 +135,24 @@ void * my_malloc(size_t size) {
     // and so the compiler doesn't know how far to move the pointer.
     // Since a uint8_t is always one byte, adding SIZE_T_SIZE after
     // casting advances the pointer by SIZE_T_SIZE bytes.
-    return (void *)((char *)p + SIZE_T_SIZE);
+    void* newptr = (void *)((char *)p + SIZE_T_SIZE);
+    // assert(newptr != (void*) 0x7ffff433fe90);
+    return newptr;
   }
 }
 
 // free - Freeing a block does nothing.
 void my_free(void *ptr) {
-  Node* prev = head;
-  head = (Node*) ptr;
-  head->next = prev;
+  // void* new_ptr = (void *)((char *) ptr - SIZE_T_SIZE);
+  // size_t expo = *(size_t*)(new_ptr) & ((1 << SIZE_T_SIZE) - 1);
+  size_t expo = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
+
+  // size_t expo = *(size_t*)ptr & ((1 << sizeof(size_t)) - 1);
+  assert(expo < MAX_SIZE);
+  Node* prev = freeList[expo];
+  freeList[expo] = (Node*) ptr;
+  freeList[expo]->next = prev;
+
 }
 
 // realloc - Implemented simply in terms of malloc and free
@@ -153,7 +170,7 @@ void * my_realloc(void *ptr, size_t size) {
   // address we returned.  Now we can back up by that many bytes and read
   // the size.
   copy_size = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
-
+  copy_size = pow(2, copy_size);
   // If the new block is smaller than the old one, we have to stop copying
   // early so that we don't write off the end of the new block of memory.
   if (size < copy_size)
