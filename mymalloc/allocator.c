@@ -49,7 +49,7 @@
 #define BLOCK_SIZE 1024
 #endif
 
-#define MAX_SIZE 20
+#define MAX_SIZE 64
 
 typedef struct Node {
   struct Node* next;
@@ -85,18 +85,25 @@ int my_check() {
 // calls are made.  Since this is a very simple implementation, we just
 // return success.
 int my_init() {
-  for (int i = 0; i < MAX_SIZE; i++){
-    freeList[i] = mem_sbrk(sizeof(Node));
-    freeList[i]->next = NULL;
+  for (int i = 0; i < MAX_SIZE; i++) {
+    freeList[i] = NULL;
   }
   return 0;
+}
+
+size_t ceil_log_size(size_t size) {
+	size_t expo = 3;
+	while (1 << expo < size) { expo++; }
+	return expo;
 }
 
 //  malloc - Allocate a block by incrementing the brk pointer.
 //  Always allocate a block whose size is a multiple of the alignment.
 void * my_malloc(size_t size) {
-  size_t expo = ceil(log(size)/log(2));
-  size = pow(2, expo);
+  //size_t expo = ceil(log(size)/log(2));
+	//if (expo < 3) expo = 3;
+	size_t expo = ceil_log_size(size);
+  size = 1 << expo;
   // if (size > BLOCK_SIZE) {
   //   return NULL;
   // } else {
@@ -106,12 +113,14 @@ void * my_malloc(size_t size) {
   // size of the block we've allocated.  Take a look at realloc to see
   // one example of a place where this can come in handy.
   int aligned_size = ALIGN(size + SIZE_T_SIZE);
+	// printf("%lu", SIZE_T_SIZE); 	 
 
   assert(expo < MAX_SIZE);
   void *p;
-  if (freeList[expo]->next != NULL){
+  if (freeList[expo] != NULL){
     p = freeList[expo];
     freeList[expo] = freeList[expo]->next;
+		return p;
   } else {
     p = mem_sbrk(aligned_size);
   }
@@ -127,7 +136,7 @@ void * my_malloc(size_t size) {
   } else {
     // We store the size of the block we've allocated in the first
     // SIZE_T_SIZE bytes.
-    *(size_t*)p = expo;
+    *(size_t*)p = (size_t) expo;
 
     // Then, we return a pointer to the rest of the block of memory,
     // which is at least size bytes long.  We have to cast to uint8_t
@@ -152,7 +161,6 @@ void my_free(void *ptr) {
   Node* prev = freeList[expo];
   freeList[expo] = (Node*) ptr;
   freeList[expo]->next = prev;
-
 }
 
 // realloc - Implemented simply in terms of malloc and free
