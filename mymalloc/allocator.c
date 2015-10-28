@@ -113,7 +113,6 @@ void * my_malloc(size_t size) {
   // size of the block we've allocated.  Take a look at realloc to see
   // one example of a place where this can come in handy.
   int aligned_size = ALIGN(size + SIZE_T_SIZE);
-	// printf("%lu", SIZE_T_SIZE); 	 
 
   assert(expo < MAX_SIZE);
   void *p;

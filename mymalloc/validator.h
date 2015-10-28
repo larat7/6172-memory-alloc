@@ -58,7 +58,9 @@ static int add_range(const malloc_impl_t *impl, range_t **ranges, char *lo,
 
   // Payload addresses must be R_ALIGNMENT-byte aligned
   // TODO(project3): YOUR CODE HERE
-  if (!(IS_ALIGNED(&lo)) || !(IS_ALIGNED(&hi))) {
+  if (!(IS_ALIGNED(lo))) {
+    printf("The payload must be aligned\n");
+    printf("lo: %p, size: %d\n", lo, size);
     return 0;
   }
 
@@ -71,22 +73,30 @@ static int add_range(const malloc_impl_t *impl, range_t **ranges, char *lo,
 
   // The payload must not overlap any other payloads
   // TODO(project3): YOUR CODE HERE
-  range_t curr_range = {.lo = lo, .hi = hi, .next = NULL};
 
   range_t* range = *ranges;
   while(range != NULL) {
-    if ((curr_range.lo >= range->lo && curr_range.lo <= range->hi) ||
-        (curr_range.hi >= range->lo && curr_range.hi <= range->hi) ||
-        (range->hi >= curr_range.lo && range->hi <= curr_range.hi) ||
-        (range->lo >= curr_range.lo && range->lo <= curr_range.hi)) {
+    if ((lo >= range->lo && lo <= range->hi) ||
+        (hi >= range->lo && hi <= range->hi) ||
+        (range->hi >= lo && range->hi <= hi) ||
+        (range->lo >= lo && range->lo <= hi)) {
+      printf("Paylod is overlapping with another payload\n");
+      printf("curr_range: lo : %p, hi: %p\n", lo, hi);
+      printf("range: lo : %p, hi: %p\n", range->lo, range->hi);
       return 0;
     }
+
+    range = range->next;
   }
 
   // Everything looks OK, so remember the extent of this block by creating a
   // range struct and adding it the range list.
   // TODO(project3):  YOUR CODE HERE
-
+  range_t* new_range = malloc(sizeof(range_t));
+  new_range->lo = lo;
+  new_range->hi = hi;
+  new_range->next = *ranges;
+  *ranges = new_range;
   return 1;
 }
 
@@ -99,6 +109,24 @@ static void remove_range(range_t **ranges, char *lo) {
   // payload and remove it.  Remember to properly handle the case where the
   // payload is in the first node, and to free the node after unlinking it.
   // TODO(project3): YOUR CODE HERE
+
+  range_t* range = *ranges;
+  range_t* p;
+  if (lo == range->lo){
+      *ranges = range->next;
+      free(range);
+      return;
+  }
+  while(range != NULL) {
+    if (lo == range->next->lo) {
+      p = range->next;
+      range->next = range->next->next;
+      free(p);
+      return;
+    }
+    range = range->next;
+  }
+
 }
 
 // clear_ranges - free all of the range records for a trace
