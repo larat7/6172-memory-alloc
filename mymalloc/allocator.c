@@ -91,7 +91,7 @@ int my_init() {
   return 0;
 }
 
-size_t ceil_log_size(size_t size) {
+size_t ceil_log(size_t size) {
 	size_t expo = 3;
 	while (1 << expo < size) { expo++; }
 	return expo;
@@ -120,7 +120,7 @@ void * split(size_t expo, size_t size){
 //  Always allocate a block whose size is a multiple of the alignment.
 void * my_malloc(size_t size) {
   size_t new_size = size + SIZE_T_SIZE;
-	size_t expo = ceil_log_size(new_size);
+	size_t expo = ceil_log(new_size);
   new_size = 1 << expo;
   // We allocate a little bit of extra memory so that we can store the
   // size of the block we've allocated.  Take a look at realloc to see
@@ -180,30 +180,41 @@ void my_free(void *ptr) {
 // realloc - Implemented simply in terms of malloc and free
 void * my_realloc(void *ptr, size_t size) {
   void *newptr;
+  void *free_block;
   size_t copy_size;
-
+  size_t old_expo;
+  size_t new_expo = ceil_log(size + SIZE_T_SIZE);
+  size_t new_size = 1 << new_expo;
 
   // Get the size of the old block of memory.  Take a peek at my_malloc(),
   // where we stashed this in the SIZE_T_SIZE bytes directly before the
   // address we returned.  Now we can back up by that many bytes and read
   // the size.
-  copy_size = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
-  copy_size = 1 << copy_size;
+  old_expo = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
+  copy_size = 1 << old_expo;
 
-  // if the allocated block is big enough, return the pointer itself
-  if (size <= copy_size){
+  // If the allocated block is big enough, return the pointer itself
+  // and free remaining space.
+  if (new_size <= copy_size){
+    // free extra space
+    *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE) = new_expo; // changes header for new block
+    free_block = (void*) ((char*)ptr + new_size);
+    *(size_t*)((char*)free_block -SIZE_T_SIZE) = old_expo - new_expo; // create header for free block
+    my_free(free_block);
+
     return ptr;
   }
 
-  // Allocate a new chunk of memory, and fail if that allocation fails.
-  newptr = my_malloc(size);
-  if (NULL == newptr)
-    return NULL;
 
   // If the new block is smaller than the old one, we have to stop copying
   // early so that we don't write off the end of the new block of memory.
   if (size < copy_size)
     copy_size = size;
+
+  // Allocate a new chunk of memory, and fail if that allocation fails.
+  newptr = my_malloc(size);
+  if (NULL == newptr)
+    return NULL;
 
   // This is a standard library call that performs a simple memory copy.
   memcpy(newptr, ptr, copy_size);
