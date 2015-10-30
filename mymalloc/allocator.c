@@ -97,25 +97,26 @@ size_t ceil_log(size_t size) {
 	return expo;
 }
 
+// Given an expo and a size, takes a block of size size in the free list
+// and splits it in half.
+// Returns the first half and adds the second half to the free list.
 void * split(size_t expo, size_t size){
-  void *p;
+  void *ptr;
   void *free_block;
 
-  p = freeList[expo+1]; // get block from free list
+  ptr = freeList[expo+1]; // get block from free list
   freeList[expo+1] = freeList[expo+1]->next; // remove used block form free list
-  p = (void *)((char*)p - SIZE_T_SIZE);
-  *(size_t*)p = expo; // change header
+  *(size_t*)((char*)ptr - SIZE_T_SIZE) = expo; // change header
 
-  // add other half to appropriatte free list.
-  free_block = (void*) ((char *) p + size);
-  *(size_t*)free_block = (size_t) expo;
-  free_block = (void*) ((char *)free_block + SIZE_T_SIZE);
+  // free other half.
+  free_block = (void*) ((char *) ptr + size);
+  *(size_t*)((char*)free_block - SIZE_T_SIZE) = (size_t) expo; // add header
+  my_free(free_block);
 
-  ((Node *) free_block)->next = freeList[expo];
-  freeList[expo] = free_block;
-
-  return (void*) ((char *)p + SIZE_T_SIZE);
+  return ptr;
 }
+
+
 //  malloc - Allocate a block by incrementing the brk pointer.
 //  Always allocate a block whose size is a multiple of the alignment.
 void * my_malloc(size_t size) {
@@ -165,13 +166,9 @@ void * my_malloc(size_t size) {
 
 // free - Freeing a block does nothing.
 void my_free(void *ptr) {
-  // void* new_ptr = (void *)((char *) ptr - SIZE_T_SIZE);
-  // size_t expo = *(size_t*)(new_ptr) & ((1 << SIZE_T_SIZE) - 1);
   size_t expo = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
-
-
-  // size_t expo = *(size_t*)ptr & ((1 << sizeof(size_t)) - 1);
   assert(expo < MAX_SIZE);
+
   Node* prev = freeList[expo];
   freeList[expo] = (Node*) ptr;
   freeList[expo]->next = prev;
