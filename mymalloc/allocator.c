@@ -121,12 +121,12 @@ void * split(size_t expo, size_t size){
 //  Always allocate a block whose size is a multiple of the alignment.
 void * my_malloc(size_t size) {
   size_t new_size = size + SIZE_T_SIZE;
-	size_t expo = ceil_log(new_size);
+	size_t expo = ceil_log(size);
   new_size = 1 << expo;
   // We allocate a little bit of extra memory so that we can store the
   // size of the block we've allocated.  Take a look at realloc to see
   // one example of a place where this can come in handy.
-  int aligned_size = ALIGN(new_size);
+  int aligned_size = ALIGN(new_size + SIZE_T_SIZE);
 
   assert(expo < MAX_SIZE);
   void *p;
@@ -134,8 +134,8 @@ void * my_malloc(size_t size) {
     p = freeList[expo];
     freeList[expo] = freeList[expo]->next;
 		return p;
-  } else if (freeList[expo+1] != NULL){
-    return split(expo, new_size);
+  // } else if (freeList[expo+1] != NULL){
+  //   return split(expo, new_size);
   } else {
     p = mem_sbrk(aligned_size);
   }
@@ -203,15 +203,16 @@ void * my_realloc(void *ptr, size_t size) {
   }
 
 
-  // If the new block is smaller than the old one, we have to stop copying
-  // early so that we don't write off the end of the new block of memory.
-  if (size < copy_size)
-    copy_size = size;
-
-  // Allocate a new chunk of memory, and fail if that allocation fails.
   newptr = my_malloc(size);
   if (NULL == newptr)
     return NULL;
+
+  // If the new block is smaller than the old one, we have to stop copying
+  // early so that we don't write off the end of the new block of memory.
+  // Allocate a new chunk of memory, and fail if that allocation fails.
+  if (size < copy_size)
+    copy_size = size;
+
 
   // This is a standard library call that performs a simple memory copy.
   memcpy(newptr, ptr, copy_size);

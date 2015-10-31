@@ -1,4 +1,4 @@
-/*
+  /*
  * validator.h - 6.172 Malloc Validator
  *
  * Validates a malloc/free/realloc implementation.
@@ -60,7 +60,7 @@ static int add_range(const malloc_impl_t *impl, range_t **ranges, char *lo,
   // TODO(project3): YOUR CODE HERE
   if (!(IS_ALIGNED(lo))) {
     printf("The payload must be aligned\n");
-    printf("lo: %p, size: %d\n", lo, size);
+    // printf("lo: %p, size: %d\n", lo, size);
     return 0;
   }
 
@@ -184,6 +184,7 @@ int eval_mm_valid(const malloc_impl_t *impl, trace_t *trace, int tracenum) {
         // Fill the allocated region with some unique data that you can check
         // for if the region is copied via realloc.
         // TODO(project3): YOUR CODE HERE
+        memset(p, 0xAD, size);
 
         // Remember region
         trace->blocks[index] = p;
@@ -213,6 +214,14 @@ int eval_mm_valid(const malloc_impl_t *impl, trace_t *trace, int tracenum) {
         if (size < oldsize)
           oldsize = size;
         // TODO(project3): YOUR CODE HERE
+        for (unsigned int i = 0; i < oldsize; i++) {
+          if ((newp[i] & 0xFF) != 0xAD) {
+            printf("Realloc failed to copy correctly.\n");
+            printf("newptr: %x\n", newp[i]);
+            return 0;
+          }
+        }
+        memset(newp + oldsize, 0xAD, size - oldsize);
 
         // Remember region
         trace->blocks[index] = newp;
