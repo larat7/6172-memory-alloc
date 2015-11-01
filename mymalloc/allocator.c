@@ -53,16 +53,15 @@
 #define PREVIOUS_BLOCK_SIZE(block) (*(size_t*)((uint8_t*)block - 2*SIZE_T_SIZE))
 #define PREVIOUS_BLOCK(block) ((block_t*) ((uint8_t*)block - 2*SIZE_T_SIZE - PREVIOUS_BLOCK_SIZE(block)))
 
-#ifndef BLOCK_SIZE
-#define BLOCK_SIZE 1024
+#ifndef MIN_BLOCK_SIZE
+#define MIN_BLOCK_SIZE 32
 #endif
 
-#define MAX_SIZE 64
+#define MAX_SIZE 32
 
 typedef struct block_t {
   struct block_t* next; // 8 bytes
   struct block_t* prev; // 8 bytes
-  // uint32_t size; // 4 bytes
 } block_t;
 
 block_t* free_list[MAX_SIZE];
@@ -137,19 +136,18 @@ void * my_malloc(size_t size) {
   // We allocate a little bit of extra memory so that we can store the
   // size of the block we've allocated.  Take a look at realloc to see
   // one example of a place where this can come in handy.
+  void* p;
   if (size < 16) {
     size = 16;
   }
   size = ALIGN(size);
   int aligned_size = size + 2*SIZE_T_SIZE;
-  void *p = get_free_block(size);
+  p = get_free_block(size);
   if (p != NULL){
     assert(IS_FREE(p));
     (*BLOCK_HEADER(p))--;
     assert(!IS_FREE(p));
 		return p;
-  // } else if (free_list[expo+1] != NULL){
-  //   return split(expo, new_size);
   } else {
     p = mem_sbrk(aligned_size);
   }
@@ -275,7 +273,7 @@ void split(block_t* block, size_t size, size_t block_size){
   size_t* first_footer;
   size_t* second_footer;
   size_t expo;
-  if (block_size - size > 32){
+  if (block_size - size >= MIN_BLOCK_SIZE){
     *first_header = size + 1;
     *second_header = block_size - size - 2*SIZE_T_SIZE;
 
