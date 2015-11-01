@@ -49,15 +49,15 @@
 #define BLOCK_SIZE(block) ((size_t) (*BLOCK_HEADER(block) - IS_FREE(block)))
 #define BLOCK_FOOTER(block) ((size_t*)((uint8_t*)block + BLOCK_SIZE(block)))
 
-#define NEXT_BLOCK(block) ((void*) ((uint8_t*)block + BLOCK_SIZE(block) + 2*SIZE_T_SIZE))
-#define PREVIOUS_BLOCK_SIZE(block) (*(size_t*)((uint8_t*)block - 2 * SIZE_T_SIZE))
-#define PREVIOUS_BLOCK(block) ((void*) ((uint8_t*)block - 2*SIZE_T_SIZE - PREVIOUS_BLOCK_SIZE(block)))
+#define NEXT_BLOCK(block) ((block_t*) ((uint8_t*)block + BLOCK_SIZE(block) + 2*SIZE_T_SIZE))
+#define PREVIOUS_BLOCK_SIZE(block) (*(size_t*)((uint8_t*)block - 2*SIZE_T_SIZE))
+#define PREVIOUS_BLOCK(block) ((block_t*) ((uint8_t*)block - 2*SIZE_T_SIZE - PREVIOUS_BLOCK_SIZE(block)))
 
 #ifndef BLOCK_SIZE
 #define BLOCK_SIZE 1024
 #endif
 
-#define MAX_SIZE 26
+#define MAX_SIZE 64
 
 typedef struct block_t {
   struct block_t* next; // 8 bytes
@@ -68,7 +68,7 @@ typedef struct block_t {
 block_t* free_list[MAX_SIZE];
 
 void* get_free_block(size_t size);
-void coalesce(void *block);
+void* coalesce(void *block);
 
 // check - This checks our invariant that the size_t header before every
 // block points to either the beginning of the next block, or the end of the
@@ -109,7 +109,6 @@ int my_check() {
         return -1;
       }
       block = block->next;
-      block_size = BLOCK_SIZE(block);
     }
   }
 
@@ -201,7 +200,8 @@ void * my_malloc(size_t size) {
 
 // free - Freeing a block does nothing.
 void my_free(void *ptr) {
-  // coalesce(ptr);
+  ptr = coalesce(ptr);
+  assert(*BLOCK_HEADER(ptr) == *BLOCK_FOOTER(ptr));
   size_t size = BLOCK_SIZE(ptr);
   size_t expo = ceil_log(size);
   assert(size != 0);
@@ -215,31 +215,50 @@ void my_free(void *ptr) {
   if (prev != NULL) {
     prev->prev = free_list[expo];
   }
+  assert(*BLOCK_HEADER(ptr) == *BLOCK_FOOTER(ptr));
   (*BLOCK_HEADER(ptr))++;
+
   assert(IS_FREE(ptr));
 }
 
-void coalesce(void *block){
-  void* next_block;
-  void* prev_block;
+void* coalesce(void *block){
+  block_t* next_block;
+  block_t* prev_block;
   size_t* block_header;
   size_t* block_footer;
+  size_t next_block_log_size;
+  size_t prev_block_log_size;
+
 
   size_t block_size = BLOCK_SIZE(block);
   size_t new_size;
 
   next_block = NEXT_BLOCK(block);
-  if (IS_FREE(next_block) && next_block < mem_heap_hi()){
+  if (IS_FREE(next_block) && (void*)next_block < mem_heap_hi()){
+    next_block_log_size = ceil_log(BLOCK_SIZE(next_block));
     block_header = BLOCK_HEADER(block);
     block_footer = BLOCK_FOOTER(next_block);
 
     new_size = block_size + BLOCK_SIZE(next_block) + 2*SIZE_T_SIZE;
     *block_header = new_size;
     *block_footer = new_size;
+
+    if (next_block->prev != NULL) {
+      next_block->prev->next = next_block->next;
+      if (next_block->next != NULL)
+        next_block->next->prev = next_block->prev;
+    } else {
+      free_list[next_block_log_size] = next_block->next;
+      if (free_list[next_block_log_size] != NULL) {
+        free_list[next_block_log_size]->prev = NULL;
+      }
+    }
+
   }
 
   prev_block = PREVIOUS_BLOCK(block);
-  if (IS_FREE(prev_block) && prev_block > mem_heap_lo()){
+  if ((void*)prev_block > mem_heap_lo() && IS_FREE(prev_block)){
+    prev_block_log_size = ceil_log(BLOCK_SIZE(prev_block));
     block_header = BLOCK_HEADER(prev_block);
     block_footer = BLOCK_FOOTER(block);
 
@@ -248,8 +267,23 @@ void coalesce(void *block){
     *block_header = new_size;
     *block_footer = new_size;
 
+    if (prev_block->prev != NULL) {
+      prev_block->prev->next = prev_block->next;
+      if (prev_block->next != NULL)
+        prev_block->next->prev = prev_block->prev;
+    } else {
+      free_list[prev_block_log_size] = prev_block->next;
+      if (free_list[prev_block_log_size] != NULL)
+        free_list[prev_block_log_size]->prev = NULL;
+    }
+
+
     block = prev_block;
   }
+
+  assert(*BLOCK_HEADER(block) == *BLOCK_FOOTER(block));
+
+  return block;
 }
 
 void* get_free_block(size_t size){
@@ -267,7 +301,7 @@ void* get_free_block(size_t size){
     if (free_list[expo] != NULL) {
       free_list[expo]->prev = NULL;
     }
-    assert(IS_FREE(block));
+    assert(BLOCK_SIZE(block) == *BLOCK_FOOTER(block));
     return block;
   }
   // handles other cases
