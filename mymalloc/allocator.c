@@ -131,25 +131,6 @@ size_t ceil_log(size_t size) {
 	return expo;
 }
 
-// Given an expo and a size, takes a block of size size in the free list
-// and splits it in half.
-// Returns the first half and adds the second half to the free list.
-void * split(size_t expo, size_t size){
-  void *ptr;
-  void *free_block;
-
-  ptr = free_list[expo+1]; // get block from free list
-  free_list[expo+1] = free_list[expo+1]->next; // remove used block form free list
-  *(size_t*)((char*)ptr - SIZE_T_SIZE) = expo; // change header
-
-  // free other half.
-  free_block = (void*) ((char *) ptr + size);
-  *(size_t*)((char*)free_block - SIZE_T_SIZE) = (size_t) expo; // add header
-  my_free(free_block);
-
-  return ptr;
-}
-
 //  malloc - Allocate a block by incrementing the brk pointer.
 //  Always allocate a block whose size is a multiple of the alignment.
 void * my_malloc(size_t size) {
@@ -286,14 +267,53 @@ void* coalesce(void *block){
   return block;
 }
 
+void split(block_t* block, size_t size, size_t block_size){
+  block_t* prev;
+  block_t* other_block = (block_t*) ((uint8_t*)block + size + 2*SIZE_T_SIZE);
+  size_t* first_header = BLOCK_HEADER(block);
+  size_t* second_header = BLOCK_HEADER(other_block);
+  size_t* first_footer;
+  size_t* second_footer;
+  size_t expo;
+  if (block_size - size > 32){
+    *first_header = size + 1;
+    *second_header = block_size - size - 2*SIZE_T_SIZE;
+
+    first_footer = BLOCK_FOOTER(block);
+    second_footer = BLOCK_FOOTER(other_block);
+
+    *first_footer = *first_header - 1;
+    *second_footer = *second_header;
+
+    // add to free list
+    expo = ceil_log(BLOCK_SIZE(other_block));
+    prev = free_list[expo];
+    free_list[expo] = other_block;
+    free_list[expo]->next = prev;
+    free_list[expo]->prev = NULL;
+
+    if (prev != NULL) {
+      prev->prev = free_list[expo];
+    }
+    assert(*BLOCK_HEADER(other_block) == *BLOCK_FOOTER(other_block));
+    (*BLOCK_HEADER(other_block))++;
+
+    assert(IS_FREE(other_block));
+  }
+}
+
 void* get_free_block(size_t size){
   size_t expo = ceil_log(size);
   size_t block_size;
   block_t* block = free_list[expo];
 
-  if (block == NULL) {
-    return NULL;
+  while (block == NULL) {
+    expo++;
+    if (expo == MAX_SIZE)
+      return NULL;
+    block = free_list[expo];
   }
+
   block_size = BLOCK_SIZE(block);
   // handles case where returned block is the first one
   if (block_size >= size) {
@@ -301,7 +321,7 @@ void* get_free_block(size_t size){
     if (free_list[expo] != NULL) {
       free_list[expo]->prev = NULL;
     }
-    assert(BLOCK_SIZE(block) == *BLOCK_FOOTER(block));
+    split(block, size, block_size);
     return block;
   }
   // handles other cases
@@ -313,7 +333,7 @@ void* get_free_block(size_t size){
       if (block->next != NULL) {
         block->next->prev = block->prev;
       }
-      assert(IS_FREE(block));
+      split(block, size, block_size);
       return block;
     }
     block = block->next;
