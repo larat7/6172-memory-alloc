@@ -209,7 +209,6 @@ void* coalesce(void *block){
   size_t next_block_log_size;
   size_t prev_block_log_size;
 
-
   size_t block_size = BLOCK_SIZE(block);
   size_t new_size;
 
@@ -306,14 +305,35 @@ void* get_free_block(size_t size){
   size_t expo = ceil_log(size);
   size_t block_size;
   block_t* block = free_list[expo];
+	// try first to get from a larger bucket
+	expo = expo + 1;
+	while (free_list[expo] == NULL && expo < MAX_SIZE) {
+		expo++;
+	}
 
+	if (expo != MAX_SIZE) {
+		block = free_list[expo];
+		free_list[expo] = block->next;
+		if (free_list[expo] != NULL) {
+			free_list[expo]->prev = NULL;
+		}
+		split(block, size, BLOCK_SIZE(block));
+		return block;
+	}
+	/*
   while (block == NULL) {
     expo++;
     if (expo == MAX_SIZE)
       return NULL;
     block = free_list[expo];
   }
-
+	*/
+	// get from correct size bucket
+	expo--;
+	block = free_list[expo];
+	if (block == NULL) {
+		return NULL;
+	}
   block_size = BLOCK_SIZE(block);
   // handles case where returned block is the first one
   if (block_size >= size) {
