@@ -50,12 +50,19 @@
 #define BLOCK_SIZE(block) ((uint32_t) (*BLOCK_HEADER(block) - IS_FREE(block)))
 #define BLOCK_FOOTER(block) ((uint32_t*)((uint8_t*)block + BLOCK_SIZE(block)))
 
+
 #define NEXT_BLOCK(block) ((block_t*) ((uint8_t*)block + BLOCK_SIZE(block) + 2*UINT32_T_SIZE))
 #define PREVIOUS_BLOCK_SIZE(block) (*(uint32_t*)((uint8_t*)block - 2*UINT32_T_SIZE))
 #define PREVIOUS_BLOCK(block) ((block_t*) ((uint8_t*)block - 2*UINT32_T_SIZE - PREVIOUS_BLOCK_SIZE(block)))
+#define LAST_BLOCK_SIZE *(uint32_t*)((uint8_t*)mem_heap_hi() + 1 - UINT32_T_SIZE)
+#define LAST_BLOCK ((block_t*) ((uint8_t*)mem_heap_hi()+1 - LAST_BLOCK_SIZE - UINT32_T_SIZE))
 
 #ifndef MIN_BLOCK_SIZE
-#define MIN_BLOCK_SIZE 24
+#define MIN_BLOCK_SIZE 16
+#endif
+
+#ifndef MIN_SPLIT_SIZE
+#define MIN_SPLIT_SIZE 256
 #endif
 
 #define MAX_SIZE 32
@@ -139,8 +146,9 @@ void * my_malloc(size_t size) {
   // size of the block we've allocated.  Take a look at realloc to see
   // one example of a place where this can come in handy.
   void* p;
-  if (size < 16) {
-    size = 16;
+  block_t* last_block = LAST_BLOCK;
+  if (size < MIN_BLOCK_SIZE) {
+    size = MIN_BLOCK_SIZE;
   }
   size = ALIGN(size);
   int aligned_size = size + 2 * UINT32_T_SIZE;
@@ -151,6 +159,29 @@ void * my_malloc(size_t size) {
     assert(!IS_FREE(p));
     assert(BLOCK_SIZE(p) % ALIGNMENT == 0);
 		return p;
+  } else if((void*) last_block > mem_heap_lo() && IS_FREE(last_block)){
+    size_t expo = ceil_log(BLOCK_SIZE(last_block));
+    if (last_block->prev == NULL) {
+      free_list[expo] = last_block->next;
+      if (free_list[expo] != NULL) {
+        free_list[expo]->prev = NULL;
+      }
+    } else {
+      last_block->prev->next = last_block->next;
+      if (last_block->next != NULL) {
+        last_block->next->prev = last_block->prev;
+      }
+    }
+    int increment_size = size - BLOCK_SIZE(last_block);
+    if (increment_size > 0) {
+      mem_sbrk(increment_size);
+      *BLOCK_HEADER(last_block) = (uint32_t) size;
+      *BLOCK_FOOTER(last_block) = (uint32_t) size;
+    }
+
+    (*BLOCK_HEADER(last_block)) -= ((*BLOCK_HEADER(last_block)) % 2);
+
+    return (void*) last_block;
   } else {
     p = mem_sbrk(aligned_size);
   }
@@ -276,7 +307,7 @@ void split(block_t* block, size_t size, size_t block_size){
   uint32_t* second_footer;
   uint32_t expo;
 
-  if (block_size - size >= MIN_BLOCK_SIZE){
+  if (block_size - size >= MIN_SPLIT_SIZE){
     *first_header = size + 1;
     *second_header = block_size - size - 2*UINT32_T_SIZE;
 
@@ -331,35 +362,35 @@ void* get_free_block(size_t size){
   }
 	*/
 	// get from correct size bucket
-	expo--;
-	block = free_list[expo];
-	if (block == NULL) {
-		return NULL;
-	}
-  block_size = BLOCK_SIZE(block);
-  // handles case where returned block is the first one
-  if (block_size >= size) {
-    free_list[expo] = block->next;
-    if (free_list[expo] != NULL) {
-      free_list[expo]->prev = NULL;
-    }
-    split(block, size, block_size);
-    return block;
-  }
-  // handles other cases
-  block = block->next;
-  while (block != NULL) {
-    block_size = BLOCK_SIZE(block);
-    if (block_size >= size) {
-      block->prev->next = block->next;
-      if (block->next != NULL) {
-        block->next->prev = block->prev;
-      }
-      split(block, size, block_size);
-      return block;
-    }
-    block = block->next;
-  }
+	// expo = ceil_log(size);
+	// block = free_list[expo];
+	// if (block == NULL) {
+	// 	return NULL;
+	// }
+ //  block_size = BLOCK_SIZE(block);
+ //  // handles case where returned block is the first one
+ //  if (block_size >= size) {
+ //    free_list[expo] = block->next;
+ //    if (free_list[expo] != NULL) {
+ //      free_list[expo]->prev = NULL;
+ //    }
+ //    split(block, size, block_size);
+ //    return block;
+ //  }
+ //  // handles other cases
+ //  block = block->next;
+ //  while (block != NULL) {
+ //    block_size = BLOCK_SIZE(block);
+ //    if (block_size >= size) {
+ //      block->prev->next = block->next;
+ //      if (block->next != NULL) {
+ //        block->next->prev = block->prev;
+ //      }
+ //      split(block, size, block_size);
+ //      return block;
+ //    }
+ //    block = block->next;
+ //  }
   return NULL;
 }
 

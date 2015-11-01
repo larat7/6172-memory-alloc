@@ -82,6 +82,9 @@ run: $(TARGETS)
 		echo ; \
 	done
 
+autotune:
+	./opentuner_run.py --test-limit=300 --no-dups --display-frequency=20
+
 partial_clean::
 	$(RM) -R $(TARGETS) $(OBJS) $(MDRIVER_OBJS) *.std*
 	$(RM) -R tmp/*.out
