@@ -44,18 +44,23 @@
 
 // The smallest aligned size that will hold a size_t value.
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+#define BLOCK_SIZE(block) ((*(size_t*)((uint8_t*)block - SIZE_T_SIZE))
 
 #ifndef BLOCK_SIZE
 #define BLOCK_SIZE 1024
 #endif
 
-#define MAX_SIZE 64
+#define MAX_SIZE 26
 
-typedef struct Node {
-  struct Node* next;
-} Node;
+typedef struct block_t {
+  struct block_t* next; // 8 bytes
+  // struct block_t* prev; // 8 bytes
+  // uint32_t size; // 4 bytes
+} block_t;
 
-Node* freeList[MAX_SIZE];
+block_t* free_list[MAX_SIZE];
+
+void* get_free_block(size_t size);
 
 // check - This checks our invariant that the size_t header before every
 // block points to either the beginning of the next block, or the end of the
@@ -78,6 +83,23 @@ int my_check() {
     return -1;
   }
 
+  // checks the free_list
+  for (unsigned int i = 0; i < MAX_SIZE; i++){
+    block_t* block = free_list[i];
+    size_t block_size = BLOCK_SIZE(block);
+    size_t min = 1 << (i-1);
+    size_t max = 1 << i;
+    while(block != NULL){
+      if (block_size <= min || block_size > max){
+        printf("Block is in the wrong bucket of free list.\n");
+        printf("Bucket: %d, Block: %p, Size: %d\n\n", i, block, block_size);
+        return -1;
+      }
+      block = block->next;
+      block_size = BLOCK_SIZE(block);
+    }
+  }
+
   return 0;
 }
 
@@ -86,7 +108,7 @@ int my_check() {
 // return success.
 int my_init() {
   for (int i = 0; i < MAX_SIZE; i++) {
-    freeList[i] = NULL;
+    free_list[i] = NULL;
   }
   return 0;
 }
@@ -104,8 +126,8 @@ void * split(size_t expo, size_t size){
   void *ptr;
   void *free_block;
 
-  ptr = freeList[expo+1]; // get block from free list
-  freeList[expo+1] = freeList[expo+1]->next; // remove used block form free list
+  ptr = free_list[expo+1]; // get block from free list
+  free_list[expo+1] = free_list[expo+1]->next; // remove used block form free list
   *(size_t*)((char*)ptr - SIZE_T_SIZE) = expo; // change header
 
   // free other half.
@@ -120,21 +142,16 @@ void * split(size_t expo, size_t size){
 //  malloc - Allocate a block by incrementing the brk pointer.
 //  Always allocate a block whose size is a multiple of the alignment.
 void * my_malloc(size_t size) {
-  size_t new_size = size + SIZE_T_SIZE;
-	size_t expo = ceil_log(size);
-  new_size = 1 << expo;
   // We allocate a little bit of extra memory so that we can store the
   // size of the block we've allocated.  Take a look at realloc to see
   // one example of a place where this can come in handy.
-  int aligned_size = ALIGN(new_size + SIZE_T_SIZE);
-
-  assert(expo < MAX_SIZE);
-  void *p;
-  if (freeList[expo] != NULL){
-    p = freeList[expo];
-    freeList[expo] = freeList[expo]->next;
+  int aligned_size = ALIGN(size + SIZE_T_SIZE);
+  uint64_t *check = (uint64_t*) 0x7ffff42f0028;
+  assert((*check & 0xFFFFFFFF) != 0x8);
+  void *p = get_free_block(size);
+  if (p != NULL){
 		return p;
-  // } else if (freeList[expo+1] != NULL){
+  // } else if (free_list[expo+1] != NULL){
   //   return split(expo, new_size);
   } else {
     p = mem_sbrk(aligned_size);
@@ -151,7 +168,7 @@ void * my_malloc(size_t size) {
   } else {
     // We store the size of the block we've allocated in the first
     // SIZE_T_SIZE bytes.
-    *(size_t*)p = (size_t) expo;
+    *(size_t*)p = (size_t) size;
 
     // Then, we return a pointer to the rest of the block of memory,
     // which is at least size bytes long.  We have to cast to uint8_t
@@ -160,44 +177,84 @@ void * my_malloc(size_t size) {
     // Since a uint8_t is always one byte, adding SIZE_T_SIZE after
     // casting advances the pointer by SIZE_T_SIZE bytes.
     // assert(newptr != (void*) 0x7ffff433fe90);
-    return (void *)((char *)p + SIZE_T_SIZE);
+
+    // assert((uint64_t) p != 0x7ffff42f0028);
+    uint64_t *check = (uint64_t*) 0x7ffff42f0028;
+    assert((*check & 0xFFFFFFFF) != 0x8);
+    return (void *)((uint8_t *)p + SIZE_T_SIZE);
   }
 }
 
 // free - Freeing a block does nothing.
 void my_free(void *ptr) {
-  size_t expo = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
+  size_t size = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
+  size_t expo = ceil_log(size);
+  assert(size != 0);
   assert(expo < MAX_SIZE);
 
-  Node* prev = freeList[expo];
-  freeList[expo] = (Node*) ptr;
-  freeList[expo]->next = prev;
+  block_t* prev = free_list[expo];
+  free_list[expo] = (block_t*) ptr;
+  free_list[expo]->next = prev;
+  // free_list[expo]->size = size;
+  // free_list[expo]->prev = NULL;
+
+  // if (prev != NULL)
+  //   prev->prev = free_list[expo];
+}
+
+void* get_free_block(size_t size){
+  size_t expo = ceil_log(size);
+  size_t block_size;
+  block_t* block = free_list[expo];
+  block_t* prev;
+
+  if (block == NULL) {
+    return NULL;
+  }
+  block_size = BLOCK_SIZE(block);
+  // handles case where returned block is the first one
+  if (block_size >= size) {
+    free_list[expo] = block->next;
+    return block;
+  }
+  // handles other cases
+  prev = block;
+  block = block->next;
+  while (block != NULL) {
+    block_size = BLOCK_SIZE(block);
+    if (block_size >= size) {
+      prev->next = block->next;
+      return block;
+    }
+    prev = block;
+    block = block->next;
+  }
+  return NULL;
 }
 
 // realloc - Implemented simply in terms of malloc and free
 void * my_realloc(void *ptr, size_t size) {
   void *newptr;
-  void *free_block;
+  // void *free_block;
   size_t copy_size;
-  size_t old_expo;
-  size_t new_expo = ceil_log(size + SIZE_T_SIZE);
-  size_t new_size = 1 << new_expo;
+  // size_t old_expo;
+  // size_t new_expo = ceil_log(size + SIZE_T_SIZE);
+  // size_t new_size = 1 << new_expo;
 
   // Get the size of the old block of memory.  Take a peek at my_malloc(),
   // where we stashed this in the SIZE_T_SIZE bytes directly before the
   // address we returned.  Now we can back up by that many bytes and read
   // the size.
-  old_expo = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
-  copy_size = 1 << old_expo;
+  copy_size = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
+  // copy_size = 1 << old_expo;
 
   // If the allocated block is big enough, return the pointer itself
   // and free remaining space.
-  if (new_size <= copy_size){
-    // free extra space
-    *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE) = new_expo; // changes header for new block
-    free_block = (void*) ((char*)ptr + new_size);
-    *(size_t*)((char*)free_block -SIZE_T_SIZE) = old_expo - new_expo; // create header for free block
-    my_free(free_block);
+  if (size <= copy_size){
+    // *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE) = new_expo; // changes header for new block
+    // free_block = (void*) ((char*)ptr + new_size);
+    // *(size_t*)((char*)free_block -SIZE_T_SIZE) = old_expo - new_expo; // create header for free block
+    // my_free(free_block);
 
     return ptr;
   }
