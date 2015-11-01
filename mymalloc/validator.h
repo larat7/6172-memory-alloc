@@ -217,7 +217,7 @@ int eval_mm_valid(const malloc_impl_t *impl, trace_t *trace, int tracenum) {
         for (unsigned int i = 0; i < oldsize; i++) {
           if ((newp[i] & 0xFF) != 0xAD) {
             printf("Realloc failed to copy correctly.\n");
-            printf("newptr: %x\n", newp[i]);
+            printf("newptr: %x, size: %d\n", newp[i], size);
             return 0;
           }
         }

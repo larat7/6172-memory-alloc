@@ -147,6 +147,7 @@ void * my_malloc(size_t size) {
     assert(IS_FREE(p));
     (*BLOCK_HEADER(p))--;
     assert(!IS_FREE(p));
+    assert(BLOCK_SIZE(p) % ALIGNMENT == 0);
 		return p;
   } else {
     p = mem_sbrk(aligned_size);
@@ -273,6 +274,7 @@ void split(block_t* block, size_t size, size_t block_size){
   size_t* first_footer;
   size_t* second_footer;
   size_t expo;
+
   if (block_size - size >= MIN_BLOCK_SIZE){
     *first_header = size + 1;
     *second_header = block_size - size - 2*SIZE_T_SIZE;
@@ -294,7 +296,7 @@ void split(block_t* block, size_t size, size_t block_size){
       prev->prev = free_list[expo];
     }
     assert(*BLOCK_HEADER(other_block) == *BLOCK_FOOTER(other_block));
-    (*BLOCK_HEADER(other_block))++;
+    (*second_header)++;
 
     assert(IS_FREE(other_block));
   }
@@ -346,7 +348,7 @@ void * my_realloc(void *ptr, size_t size) {
   size_t copy_size;
   // size_t old_expo;
   // size_t new_expo = ceil_log(size + SIZE_T_SIZE);
-  // size_t new_size = 1 << new_expo;
+  size_t new_size;
 
   // Get the size of the old block of memory.  Take a peek at my_malloc(),
   // where we stashed this in the SIZE_T_SIZE bytes directly before the
@@ -358,12 +360,18 @@ void * my_realloc(void *ptr, size_t size) {
   // If the allocated block is big enough, return the pointer itself
   // and free remaining space.
   if (size <= copy_size){
-    // *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE) = new_expo; // changes header for new block
-    // free_block = (void*) ((char*)ptr + new_size);
-    // *(size_t*)((char*)free_block -SIZE_T_SIZE) = old_expo - new_expo; // create header for free block
-    // my_free(free_block);
-
     return ptr;
+  }
+
+  newptr = coalesce(ptr);
+  new_size = BLOCK_SIZE(newptr);
+
+  if (size <= new_size){
+    memmove(newptr, ptr, copy_size);
+    // split(newptr, size, new_size);
+    (*BLOCK_HEADER(newptr)) -= ((*BLOCK_HEADER(newptr)) % 2);
+    assert(!IS_FREE(newptr));
+    return newptr;
   }
 
 
