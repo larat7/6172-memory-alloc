@@ -61,7 +61,7 @@
 
 typedef struct block_t {
   struct block_t* next; // 8 bytes
-  // struct block_t* prev; // 8 bytes
+  struct block_t* prev; // 8 bytes
   // uint32_t size; // 4 bytes
 } block_t;
 
@@ -210,6 +210,11 @@ void my_free(void *ptr) {
   block_t* prev = free_list[expo];
   free_list[expo] = (block_t*) ptr;
   free_list[expo]->next = prev;
+  free_list[expo]->prev = NULL;
+
+  if (prev != NULL) {
+    prev->prev = free_list[expo];
+  }
   (*BLOCK_HEADER(ptr))++;
   assert(IS_FREE(ptr));
 }
@@ -251,7 +256,6 @@ void* get_free_block(size_t size){
   size_t expo = ceil_log(size);
   size_t block_size;
   block_t* block = free_list[expo];
-  block_t* prev;
 
   if (block == NULL) {
     return NULL;
@@ -260,20 +264,24 @@ void* get_free_block(size_t size){
   // handles case where returned block is the first one
   if (block_size >= size) {
     free_list[expo] = block->next;
+    if (free_list[expo] != NULL) {
+      free_list[expo]->prev = NULL;
+    }
     assert(IS_FREE(block));
     return block;
   }
   // handles other cases
-  prev = block;
   block = block->next;
   while (block != NULL) {
     block_size = BLOCK_SIZE(block);
     if (block_size >= size) {
-      prev->next = block->next;
+      block->prev->next = block->next;
+      if (block->next != NULL) {
+        block->next->prev = block->prev;
+      }
       assert(IS_FREE(block));
       return block;
     }
-    prev = block;
     block = block->next;
   }
   return NULL;
