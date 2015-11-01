@@ -149,6 +149,7 @@ void * my_malloc(size_t size) {
     assert(IS_FREE(p));
     (*BLOCK_HEADER(p))--;
     assert(!IS_FREE(p));
+    assert(BLOCK_SIZE(p) % ALIGNMENT == 0);
 		return p;
   } else {
     p = mem_sbrk(aligned_size);
@@ -209,7 +210,6 @@ void* coalesce(void *block){
   uint32_t* block_footer;
   uint32_t next_block_log_size;
   uint32_t prev_block_log_size;
-
 
   uint32_t block_size = BLOCK_SIZE(block);
   uint32_t new_size;
@@ -275,6 +275,7 @@ void split(block_t* block, size_t size, size_t block_size){
   uint32_t* first_footer;
   uint32_t* second_footer;
   uint32_t expo;
+
   if (block_size - size >= MIN_BLOCK_SIZE){
     *first_header = size + 1;
     *second_header = block_size - size - 2*UINT32_T_SIZE;
@@ -296,7 +297,7 @@ void split(block_t* block, size_t size, size_t block_size){
       prev->prev = free_list[expo];
     }
     assert(*BLOCK_HEADER(other_block) == *BLOCK_FOOTER(other_block));
-    (*BLOCK_HEADER(other_block))++;
+    (*second_header)++;
 
     assert(IS_FREE(other_block));
   }
@@ -306,14 +307,35 @@ void* get_free_block(size_t size){
   uint32_t expo = ceil_log(size);
   uint32_t block_size;
   block_t* block = free_list[expo];
+	// try first to get from a larger bucket
+	expo = expo + 1;
+	while (free_list[expo] == NULL && expo < MAX_SIZE) {
+		expo++;
+	}
 
+	if (expo != MAX_SIZE) {
+		block = free_list[expo];
+		free_list[expo] = block->next;
+		if (free_list[expo] != NULL) {
+			free_list[expo]->prev = NULL;
+		}
+		split(block, size, BLOCK_SIZE(block));
+		return block;
+	}
+	/*
   while (block == NULL) {
     expo++;
     if (expo == MAX_SIZE)
       return NULL;
     block = free_list[expo];
   }
-
+	*/
+	// get from correct size bucket
+	expo--;
+	block = free_list[expo];
+	if (block == NULL) {
+		return NULL;
+	}
   block_size = BLOCK_SIZE(block);
   // handles case where returned block is the first one
   if (block_size >= size) {
@@ -348,7 +370,7 @@ void * my_realloc(void *ptr, size_t size) {
   size_t copy_size;
   // size_t old_expo;
   // size_t new_expo = ceil_log(size + SIZE_T_SIZE);
-  // size_t new_size = 1 << new_expo;
+  size_t new_size;
 
   // Get the size of the old block of memory.  Take a peek at my_malloc(),
   // where we stashed this in the SIZE_T_SIZE bytes directly before the
@@ -360,12 +382,18 @@ void * my_realloc(void *ptr, size_t size) {
   // If the allocated block is big enough, return the pointer itself
   // and free remaining space.
   if (size <= copy_size){
-    // *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE) = new_expo; // changes header for new block
-    // free_block = (void*) ((char*)ptr + new_size);
-    // *(size_t*)((char*)free_block -SIZE_T_SIZE) = old_expo - new_expo; // create header for free block
-    // my_free(free_block);
-
     return ptr;
+  }
+
+  newptr = coalesce(ptr);
+  new_size = BLOCK_SIZE(newptr);
+
+  if (size <= new_size){
+    memmove(newptr, ptr, copy_size);
+    // split(newptr, size, new_size);
+    (*BLOCK_HEADER(newptr)) -= ((*BLOCK_HEADER(newptr)) % 2);
+    assert(!IS_FREE(newptr));
+    return newptr;
   }
 
 
