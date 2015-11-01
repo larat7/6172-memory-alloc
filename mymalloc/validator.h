@@ -60,7 +60,7 @@ static int add_range(const malloc_impl_t *impl, range_t **ranges, char *lo,
   // TODO(project3): YOUR CODE HERE
   if (!(IS_ALIGNED(lo))) {
     printf("The payload must be aligned\n");
-    // printf("lo: %p, size: %d\n", lo, size);
+    printf("lo: %p, size: %d\n", lo, size);
     return 0;
   }
 

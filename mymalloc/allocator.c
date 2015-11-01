@@ -44,17 +44,18 @@
 
 // The smallest aligned size that will hold a size_t value.
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
-#define BLOCK_HEADER(block) ((size_t*)((uint8_t*)block - SIZE_T_SIZE))
+#define UINT32_T_SIZE (sizeof(uint32_t))
+#define BLOCK_HEADER(block) ((uint32_t*)((uint8_t*)block - UINT32_T_SIZE))
 #define IS_FREE(block) ((*BLOCK_HEADER(block)) % 2)
-#define BLOCK_SIZE(block) ((size_t) (*BLOCK_HEADER(block) - IS_FREE(block)))
-#define BLOCK_FOOTER(block) ((size_t*)((uint8_t*)block + BLOCK_SIZE(block)))
+#define BLOCK_SIZE(block) ((uint32_t) (*BLOCK_HEADER(block) - IS_FREE(block)))
+#define BLOCK_FOOTER(block) ((uint32_t*)((uint8_t*)block + BLOCK_SIZE(block)))
 
-#define NEXT_BLOCK(block) ((block_t*) ((uint8_t*)block + BLOCK_SIZE(block) + 2*SIZE_T_SIZE))
-#define PREVIOUS_BLOCK_SIZE(block) (*(size_t*)((uint8_t*)block - 2*SIZE_T_SIZE))
-#define PREVIOUS_BLOCK(block) ((block_t*) ((uint8_t*)block - 2*SIZE_T_SIZE - PREVIOUS_BLOCK_SIZE(block)))
+#define NEXT_BLOCK(block) ((block_t*) ((uint8_t*)block + BLOCK_SIZE(block) + 2*UINT32_T_SIZE))
+#define PREVIOUS_BLOCK_SIZE(block) (*(uint32_t*)((uint8_t*)block - 2*UINT32_T_SIZE))
+#define PREVIOUS_BLOCK(block) ((block_t*) ((uint8_t*)block - 2*UINT32_T_SIZE - PREVIOUS_BLOCK_SIZE(block)))
 
 #ifndef MIN_BLOCK_SIZE
-#define MIN_BLOCK_SIZE 32
+#define MIN_BLOCK_SIZE 24
 #endif
 
 #define MAX_SIZE 32
@@ -76,11 +77,11 @@ int my_check() {
   char *p;
   char *lo = (char*)mem_heap_lo();
   char *hi = (char*)mem_heap_hi() + 1;
-  size_t size = 0;
+  uint32_t size = 0;
 
-  p = lo;
+  p = lo + 4;
   while (lo <= p && p < hi) {
-    size = *(size_t*)p - (*(size_t*)p % 2) + 2*SIZE_T_SIZE;
+    size = *(uint32_t*)p - (*(uint32_t*)p % 2) + 2*UINT32_T_SIZE;
     p += size;
   }
 
@@ -93,9 +94,9 @@ int my_check() {
   // checks the free_list
   for (unsigned int i = 0; i < MAX_SIZE; i++){
     block_t* block = free_list[i];
-    size_t block_size;
-    size_t min = 1 << (i-1);
-    size_t max = 1 << i;
+    uint32_t block_size;
+    uint32_t min = 1 << (i-1);
+    uint32_t max = 1 << i;
     while(block != NULL){
       block_size = BLOCK_SIZE(block);
       if (block_size <= min || block_size > max){
@@ -121,6 +122,7 @@ int my_init() {
   for (int i = 0; i < MAX_SIZE; i++) {
     free_list[i] = NULL;
   }
+  mem_sbrk(4);
   return 0;
 }
 
@@ -141,7 +143,7 @@ void * my_malloc(size_t size) {
     size = 16;
   }
   size = ALIGN(size);
-  int aligned_size = size + 2*SIZE_T_SIZE;
+  int aligned_size = size + 2 * UINT32_T_SIZE;
   p = get_free_block(size);
   if (p != NULL){
     assert(IS_FREE(p));
@@ -163,8 +165,8 @@ void * my_malloc(size_t size) {
   } else {
     // We store the size of the block we've allocated in the first
     // SIZE_T_SIZE bytes.
-    *(size_t*)p = (size_t) size;
-    *(size_t*)((uint8_t*)p + aligned_size - SIZE_T_SIZE) = size;
+    *(uint32_t*)p = (uint32_t) size;
+    *(uint32_t*)((uint8_t*)p + aligned_size - UINT32_T_SIZE) = (uint32_t) size;
 
     // Then, we return a pointer to the rest of the block of memory,
     // which is at least size bytes long.  We have to cast to uint8_t
@@ -173,7 +175,7 @@ void * my_malloc(size_t size) {
     // Since a uint8_t is always one byte, adding SIZE_T_SIZE after
     // casting advances the pointer by SIZE_T_SIZE bytes.
 
-    return (void *)((uint8_t *)p + SIZE_T_SIZE);
+    return (void *)((uint8_t *)p + UINT32_T_SIZE);
   }
 }
 
@@ -181,8 +183,8 @@ void * my_malloc(size_t size) {
 void my_free(void *ptr) {
   ptr = coalesce(ptr);
   assert(*BLOCK_HEADER(ptr) == *BLOCK_FOOTER(ptr));
-  size_t size = BLOCK_SIZE(ptr);
-  size_t expo = ceil_log(size);
+  uint32_t size = BLOCK_SIZE(ptr);
+  uint32_t expo = ceil_log(size);
   assert(size != 0);
   assert(expo < MAX_SIZE);
 
@@ -203,14 +205,14 @@ void my_free(void *ptr) {
 void* coalesce(void *block){
   block_t* next_block;
   block_t* prev_block;
-  size_t* block_header;
-  size_t* block_footer;
-  size_t next_block_log_size;
-  size_t prev_block_log_size;
+  uint32_t* block_header;
+  uint32_t* block_footer;
+  uint32_t next_block_log_size;
+  uint32_t prev_block_log_size;
 
 
-  size_t block_size = BLOCK_SIZE(block);
-  size_t new_size;
+  uint32_t block_size = BLOCK_SIZE(block);
+  uint32_t new_size;
 
   next_block = NEXT_BLOCK(block);
   if (IS_FREE(next_block) && (void*)next_block < mem_heap_hi()){
@@ -218,7 +220,7 @@ void* coalesce(void *block){
     block_header = BLOCK_HEADER(block);
     block_footer = BLOCK_FOOTER(next_block);
 
-    new_size = block_size + BLOCK_SIZE(next_block) + 2*SIZE_T_SIZE;
+    new_size = block_size + BLOCK_SIZE(next_block) + 2*UINT32_T_SIZE;
     *block_header = new_size;
     *block_footer = new_size;
 
@@ -241,7 +243,7 @@ void* coalesce(void *block){
     block_header = BLOCK_HEADER(prev_block);
     block_footer = BLOCK_FOOTER(block);
 
-    new_size = BLOCK_SIZE(block) + BLOCK_SIZE(prev_block) + 2*SIZE_T_SIZE;
+    new_size = BLOCK_SIZE(block) + BLOCK_SIZE(prev_block) + 2*UINT32_T_SIZE;
 
     *block_header = new_size;
     *block_footer = new_size;
@@ -267,15 +269,15 @@ void* coalesce(void *block){
 
 void split(block_t* block, size_t size, size_t block_size){
   block_t* prev;
-  block_t* other_block = (block_t*) ((uint8_t*)block + size + 2*SIZE_T_SIZE);
-  size_t* first_header = BLOCK_HEADER(block);
-  size_t* second_header = BLOCK_HEADER(other_block);
-  size_t* first_footer;
-  size_t* second_footer;
-  size_t expo;
+  block_t* other_block = (block_t*) ((uint8_t*)block + size + 2*UINT32_T_SIZE);
+  uint32_t* first_header = BLOCK_HEADER(block);
+  uint32_t* second_header = BLOCK_HEADER(other_block);
+  uint32_t* first_footer;
+  uint32_t* second_footer;
+  uint32_t expo;
   if (block_size - size >= MIN_BLOCK_SIZE){
     *first_header = size + 1;
-    *second_header = block_size - size - 2*SIZE_T_SIZE;
+    *second_header = block_size - size - 2*UINT32_T_SIZE;
 
     first_footer = BLOCK_FOOTER(block);
     second_footer = BLOCK_FOOTER(other_block);
@@ -301,8 +303,8 @@ void split(block_t* block, size_t size, size_t block_size){
 }
 
 void* get_free_block(size_t size){
-  size_t expo = ceil_log(size);
-  size_t block_size;
+  uint32_t expo = ceil_log(size);
+  uint32_t block_size;
   block_t* block = free_list[expo];
 
   while (block == NULL) {
