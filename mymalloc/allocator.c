@@ -51,9 +51,9 @@
 /****
 * Brief Design Overview:
 * Each "block" in memory has a 4 byte header and footer at the beginning
-* and end of the block that holds the size of the block. The headers and 
+* and end of the block that holds the size of the block. The headers and
 * footers are used to easily traverse the blocks in memory.
-* Since sizes are rounded to their nearest multiple of 8 to be aligned, 
+* Since sizes are rounded to their nearest multiple of 8 to be aligned,
 * we use the last bit of the header to indicate whether a block is free.
 *
 * A doubly linked free list is used to track the free blocks in memory
@@ -178,9 +178,15 @@ int my_init() {
 
 // Helper method that calculates the ceil of the log size.
 size_t ceil_log(size_t size) {
-	size_t expo = 3;
-	while (1 << expo < size) { expo++; }
-	return expo;
+  --size;
+  size |= size >> 1;
+  size |= size >> 2;
+  size |= size >> 4;
+  size |= size >> 8;
+  size |= size >> 16;
+  ++size;
+
+	return 31 - __builtin_clz(size);
 }
 
 //  malloc - Allocate a block by incrementing the brk pointer.
@@ -201,7 +207,7 @@ void * my_malloc(size_t size) {
 
 	// Get a free block from free_lists.
   p = get_free_block(size);
-	
+
 	// If such a free block exists
   if (p != NULL){
     assert(IS_FREE(p));
@@ -249,7 +255,7 @@ void * my_malloc(size_t size) {
     // the client code know that we weren't able to allocate memory.
     return NULL;
   } else {
-    // We store the size of the block we've allocated in the first 
+    // We store the size of the block we've allocated in the first
 		// and last UINT32_T_SIZE bytes
     *(uint32_t*)p = (uint32_t) size; // header
     *(uint32_t*)((uint8_t*)p + aligned_size - UINT32_T_SIZE) = (uint32_t) size; // footer
@@ -272,7 +278,7 @@ void my_free(void *ptr) {
   uint32_t expo = ceil_log(size);
   assert(size != 0);
   assert(expo < MAX_SIZE);
-	
+
 	// appends to the appropriate linked list.
   block_t* prev = free_list[expo];
   free_list[expo] = (block_t*) ptr;
@@ -300,7 +306,7 @@ void* coalesce(void *block){
 
   uint32_t block_size = BLOCK_SIZE(block);
   uint32_t new_size;
-	
+
 	// if the next block is free, merge into current one.
   next_block = NEXT_BLOCK(block);
   if (IS_FREE(next_block) && (void*)next_block < mem_heap_hi()){
@@ -311,7 +317,7 @@ void* coalesce(void *block){
     new_size = block_size + BLOCK_SIZE(next_block) + 2*UINT32_T_SIZE;
     *block_header = new_size;
     *block_footer = new_size;
-		
+
 		// removes next_block from the free list
     if (next_block->prev != NULL) {
       next_block->prev->next = next_block->next;
@@ -325,7 +331,7 @@ void* coalesce(void *block){
     }
 
   }
-	
+
 	// if the previous block is free, merge into current one
   prev_block = PREVIOUS_BLOCK(block);
   if ((void*)prev_block > mem_heap_lo() && IS_FREE(prev_block)){
@@ -357,7 +363,7 @@ void* coalesce(void *block){
 }
 
 // Splits a block into two of specified sizes. The second one will
-// be declared as free. 
+// be declared as free.
 // The point of this is to not use more memory than needed.
 // NOTE: will only split if the size of the second block is at least
 // MIN_SPLIT_SIZE.
@@ -402,7 +408,7 @@ void split(block_t* block, size_t size, size_t block_size){
 void* get_free_block(size_t size){
   uint32_t expo = ceil_log(size);
   block_t* block = free_list[expo];
-	
+
 	// Gets a block from a larger bucket. (Guaranteed to fit a block of given size).
 	expo = expo + 1;
 	while (free_list[expo] == NULL && expo < MAX_SIZE) {
