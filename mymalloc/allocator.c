@@ -178,15 +178,7 @@ int my_init() {
 
 // Helper method that calculates the ceil of the log size.
 size_t ceil_log(size_t size) {
-  --size;
-  size |= size >> 1;
-  size |= size >> 2;
-  size |= size >> 4;
-  size |= size >> 8;
-  size |= size >> 16;
-  ++size;
-
-	return 31 - __builtin_clz(size);
+	return 32 - __builtin_clz(size);
 }
 
 //  malloc - Allocate a block by incrementing the brk pointer.
