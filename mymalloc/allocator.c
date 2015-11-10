@@ -417,6 +417,46 @@ void* get_free_block(size_t size){
 		split(block, size, BLOCK_SIZE(block));
 		return block;
 	}
+  // return NULL;
+
+  size_t block_size;
+  // while (block == NULL) {
+  //   expo++;
+  //   if (expo == MAX_SIZE)
+  //     return NULL;
+  //   block = free_list[expo];
+  // }
+  // get from correct size bucket
+  expo = ceil_log(size);
+  block = free_list[expo];
+  if (block == NULL) {
+   return NULL;
+  }
+  block_size = BLOCK_SIZE(block);
+  // handles case where returned block is the first one
+  if (block_size >= size) {
+    free_list[expo] = block->next;
+    if (free_list[expo] != NULL) {
+      free_list[expo]->prev = NULL;
+    }
+    split(block, size, block_size);
+    return block;
+  }
+  // handles other cases
+  block = block->next;
+  while (block != NULL) {
+    block_size = BLOCK_SIZE(block);
+    if (block_size >= size) {
+      block->prev->next = block->next;
+      if (block->next != NULL) {
+        block->next->prev = block->prev;
+      }
+      split(block, size, block_size);
+      return block;
+    }
+    block = block->next;
+  }
+
   return NULL;
 }
 
