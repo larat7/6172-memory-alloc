@@ -57,7 +57,6 @@ static int add_range(const malloc_impl_t *impl, range_t **ranges, char *lo,
   assert(size > 0);
 
   // Payload addresses must be R_ALIGNMENT-byte aligned
-  // TODO(project3): YOUR CODE HERE
   if (!(IS_ALIGNED(lo))) {
     printf("The payload must be aligned\n");
     printf("lo: %p, size: %d\n", lo, size);
@@ -65,14 +64,12 @@ static int add_range(const malloc_impl_t *impl, range_t **ranges, char *lo,
   }
 
   // The payload must lie within the extent of the heap
-  // TODO(project3): YOUR CODE HERE
   if (hi > (char *) mem_heap_hi() || lo < (char *) mem_heap_lo()) {
     printf("The payload must lie within the extent of the heap\n");
     return 0;
   }
 
   // The payload must not overlap any other payloads
-  // TODO(project3): YOUR CODE HERE
 
   range_t* range = *ranges;
   while(range != NULL) {
@@ -91,7 +88,6 @@ static int add_range(const malloc_impl_t *impl, range_t **ranges, char *lo,
 
   // Everything looks OK, so remember the extent of this block by creating a
   // range struct and adding it the range list.
-  // TODO(project3):  YOUR CODE HERE
   range_t* new_range = malloc(sizeof(range_t));
   new_range->lo = lo;
   new_range->hi = hi;
@@ -108,7 +104,6 @@ static void remove_range(range_t **ranges, char *lo) {
   // Iterate the linked list until you find the range with a matching lo
   // payload and remove it.  Remember to properly handle the case where the
   // payload is in the first node, and to free the node after unlinking it.
-  // TODO(project3): YOUR CODE HERE
 
   range_t* range = *ranges;
   range_t* p;
@@ -151,6 +146,7 @@ int eval_mm_valid(const malloc_impl_t *impl, trace_t *trace, int tracenum) {
   char *oldp = NULL;
   char *p = NULL;
   range_t *ranges = NULL;
+  uint8_t last_byte;
 
   // Reset the heap.
   impl->reset_brk();
@@ -183,8 +179,8 @@ int eval_mm_valid(const malloc_impl_t *impl, trace_t *trace, int tracenum) {
 
         // Fill the allocated region with some unique data that you can check
         // for if the region is copied via realloc.
-        // TODO(project3): YOUR CODE HERE
-        memset(p, 0xAD, size);
+        last_byte = size & 0xFF;
+        memset(p, last_byte, size);
 
         // Remember region
         trace->blocks[index] = p;
@@ -211,17 +207,18 @@ int eval_mm_valid(const malloc_impl_t *impl, trace_t *trace, int tracenum) {
         // and then fill in the new block with new data that you can use to
         // verify the block was copied if it is resized again.
         oldsize = trace->block_sizes[index];
+        last_byte = oldsize & 0xFF;
         if (size < oldsize)
           oldsize = size;
-        // TODO(project3): YOUR CODE HERE
         for (unsigned int i = 0; i < oldsize; i++) {
-          if ((newp[i] & 0xFF) != 0xAD) {
+          if ((newp[i] & 0xFF) != last_byte) {
             printf("Realloc failed to copy correctly.\n");
             printf("newptr: %x, size: %d\n", newp[i], size);
             return 0;
           }
         }
-        memset(newp + oldsize, 0xAD, size - oldsize);
+        last_byte = size & 0xFF;
+        memset(newp, last_byte, size);
 
         // Remember region
         trace->blocks[index] = newp;
